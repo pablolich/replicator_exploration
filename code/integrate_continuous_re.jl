@@ -2,6 +2,7 @@ using LegendrePolynomials #for evaluating legendre polynomials
 using QuadGK #for numerical integration of a function
 using DifferentialEquations #integrate ODEs
 using LinearAlgebra #to build rotation matrices
+using FiniteDifferences #to calculate gradients numerically
 
 function getu(x, theta, r)
     u = 0
@@ -14,12 +15,13 @@ function getu(x, theta, r)
     return u
 end
 
-function totalpopulation(x, theta, r)
+function popdist(x, theta, r)
     u = getu(x, theta, r)
     return exp(u)
 end
 
-function quad_trap(f, a, b, N, theta, r) 
+
+function totalpopulation(f, a, b, N, theta, r) 
     h = (b-a)/N
     int = h * ( f(a, theta, r) + f(b, theta, r) ) / 2
     for k=1:N-1
@@ -40,15 +42,21 @@ function buildW(r::Int64)
     return W
 end
 
-function getgradP()
-end
-
 function re!(dtheta, theta, p, t)
     r, a, b, N = p
-    W = getW()
-    P = quad_trap(totalpopulation, a, b, N, theta, r)
-    #get gradient of P
-    gradP = getgradP(P, theta)
+    W = getW(r)
+    #write gradient function
+    P(theta) = totalpopulation(popdist, a, b, N, theta, r)
+    #evaluate gradient
+    gradP = grad(central_fdm(5, 1), P, theta)[1]
     dtheta .= W*gradP
     return dtheta
 end
+
+###
+###
+##get the ODE running
+##thetas to distributions
+##function to solve replicator directly in original space
+    ###discretize distribution and do numerical integration there
+##realistic f (project to legendere polynomials)--> get matrix of change of basis
