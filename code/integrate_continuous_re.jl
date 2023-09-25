@@ -4,17 +4,20 @@ using DifferentialEquations #integrate ODEs
 using LinearAlgebra #to build rotation matrices
 using FiniteDifferences #to calculate gradients numerically
 using Random
+using Distributions #to go from parameters to distributions
+using Polynomials, SpecialPolynomials #to change basis from standard to legendre
+
 
 """
     getu(x, theta, r)
 
 compute numerical value of the function u given a value, a rank, and the parameters
 """
-function getu(x, theta, r)
+function getu(x, theta, r, coefficients)
     u = 0
     for i in 1:r
         #evaluate legendre polynomial of degree i at x
-        b_i = Pl(x, i)/sqrt(2/(2*i + 1))
+        b_i = coefficients[i]*Pl(x, i)/sqrt(2/(2*i + 1))
         #calcule ith term
         u += theta[i]*b_i
     end
@@ -26,8 +29,8 @@ end
 
 compute the numerical value of the population distribution at x, theta
 """
-function popdist(x, theta, r)
-    u = getu(x, theta, r)
+function popdist(x, theta, r, coefficients)
+    u = getu(x, theta, r, coefficients)
     return exp(u)
 end
 
@@ -36,12 +39,12 @@ end
 
 calculate total population by numerically integrating the population distribution
 """
-function totalpopulation(f, a, b, N, theta, r) 
+function totalpopulation(f, a, b, N, theta, r, coeffs) 
     h = (b-a)/N
-    int = h * ( f(a, theta, r) + f(b, theta, r) ) / 2
+    int = h * ( f(a, theta, r, coeffs) + f(b, theta, r, coeffs) ) / 2
     for k=1:N-1
         xk = (b-a) * k/N + a
-        int = int + h*f(xk, theta, r)
+        int = int + h*f(xk, theta, r, coeffs)
     end
     return int
 end
@@ -69,10 +72,10 @@ end
 replicator equation to integrate
 """
 function re!(dtheta, theta, p, t)
-    r, a, b, N = p
+    r, a, b, N, coeffs = p
     W = buildW(r)
     #write gradient function
-    P(theta) = totalpopulation(popdist, a, b, N, theta, r)
+    P(theta) = totalpopulation(popdist, a, b, N, theta, r, coeffs)
     #evaluate gradient
     gradP = grad(central_fdm(5, 1), P, theta)[1]
     dtheta .= W*gradP
@@ -88,17 +91,32 @@ function test_integration()
     initial = rand(n) #initial conditions
     tspan = (1, 1e3) #integration time span
     N = 1000 #integration resolution
-    parameters = (r, a, b, N) #vector of parameters
+    #sample coefficients of normal polynomial
+    #get coefficients of Legendre basis
+    ######################################################
+    parameters = (r, a, b, N, coeffs) #vector of parameters
     #set up the problem and solve it
     problem = ODEProblem(re!, initial, tspan, parameters)
     sol = DifferentialEquations.solve(problem, Tsit5())
     return sol
 end
 
+function thetas2pi(theta, a, b, dx)
+    d = Normal(theta[1], theta[2])
+    dtrunc = truncated(d, a, b)
+    pdfvec = pdf.(dtrunc, a:dx:b)/(sum(pdf.(dtrunc, a:dx:b)))
+    return pdfvec
+end
+
+function getlegendrecoefficients(coefficients)
+    #form polynomial in basis of monomials
+    p = Polynomial(coefficients)
+    pL = convert(Legendre, p)
+    return coeffs(pL)
+end
+
 ###
-###
-##get the ODE running
-##thetas to distributions
+
 ##function to solve replicator directly in original space
     ###discretize distribution and do numerical integration there
     ###sample from current distribution to get expected value with montecarlo integration
