@@ -108,14 +108,46 @@ function thetas2pi(theta, a, b, dx)
     return pdfvec
 end
 
-function getlegendrecoefficients(coefficients)
-    #form polynomial in basis of monomials
-    p = Polynomial(coefficients)
-    pL = convert(Legendre, p)
-    return coeffs(pL)
+### Code to get at the bs
+#1. Sample A as skew symmetric matrix of coefficients of original basis
+function sampleA(spandimension)
+    randmat = rand(spandimension, spandimension)
+    A = 1/2*(randmat-transpose(randmat))
+    return A
+
+#2. Construct T: The rows of T are the coefficients of the legendre polynomials
+function getlegendrecoeffs(order)
+    coeffbin = zeros(order)
+    coeffbin[order] = 1
+    p = Legendre(coeffbin) 
+    #transform to standard basis of monomials
+    pst = convert(Polynomial, p)
+    #get legendre coefficients
+    lcoeffs = coeffs(pst)
+    return lcoeffs
 end
 
-###
+function append0s(vectofill, finaldimension)
+    return append!(vectofill, zeros(finaldimension-length(vectofill)))
+end
+
+function buildT(spandimension)
+    #initialize T
+    T = zeros(spandimension, spandimension)
+    for n in 1:spandimension
+        lcoeffn = getlegendrecoeffs(n)
+        tostore = append0s(lcoeffn, spandimension)
+        T[n,:] = tostore
+    end
+    return T
+end
+
+#3. Write code to invert T efficiently, since it is a triangular  matrix
+
+#4. Compute B by doing T-1AT
+#5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
+#6. compute b(x) = Q T p(x)
+#7. Use b(x) in the integration pipeline
 
 ##function to solve replicator directly in original space
     ###discretize distribution and do numerical integration there
