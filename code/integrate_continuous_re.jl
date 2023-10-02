@@ -15,12 +15,10 @@ compute numerical value of the function u given a value, a rank, and the paramet
 """
 function getu(x, theta, r, coefficients)
     u = 0
-    for i in 1:r
-        #evaluate legendre polynomial of degree i at x
-        b_i = coefficients[i]*Pl(x, i)/sqrt(2/(2*i + 1))
-        #calcule ith term
-        u += theta[i]*b_i
-    end
+    T = buildT(r)
+    Q = A2Q(coefficients, r)
+    b_vec = evaluatebi(Q, T, getbasispx(r), x, r)
+    u = dot(b_vec, theta)
     return u
 end
 
@@ -93,6 +91,7 @@ function test_integration()
     N = 1000 #integration resolution
     #sample coefficients of normal polynomial
     #get coefficients of Legendre basis
+    coeffs = 
     ######################################################
     parameters = (r, a, b, N, coeffs) #vector of parameters
     #set up the problem and solve it
@@ -114,6 +113,7 @@ function sampleA(spandimension)
     randmat = rand(spandimension, spandimension)
     A = 1/2*(randmat-transpose(randmat))
     return A
+end
 
 #2. Construct T: The rows of T are the coefficients of the legendre polynomials
 function getlegendrecoeffs(order)
@@ -143,13 +143,45 @@ function buildT(spandimension)
 end
 
 #3. Write code to invert T efficiently, since it is a triangular  matrix
+function invertT(T)
+    #create a triangular matrix
+    UTT = LowerTriangular(T)
+    return inv(UTT)
+end
 
 #4. Compute B by doing T-1AT
-#5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
-#6. compute b(x) = Q T p(x)
-#7. Use b(x) in the integration pipeline
+function computeB(A, T)
+    return invertT(T)*A*T
+end
 
+#5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
+function computeQ(B)
+    U, S, V = svd(B)
+    return U*sqrt.(diagm(S))
+end
+#Wrapper for all these functions
+function A2Q(A, spandimension)
+    T = buildT(spandimension)
+    B = computeB(A, T)
+    return computeQ(B)
+end
+
+function coeffbinary(term, order)
+    vec = zeros(order)
+    vec[term] = 1
+    return vec
+end
+#6. Use b(x) in the integration pipeline
+function getbasispx(spandimension)
+    return [Polynomial(coeffbinary(i, spandimension)) for i in 1:spandimension]
+end
+function getbi(Q, T, basis)
+    return Q*T*basis
+end
+function evaluatebi(Q, T, basis, x, spandimension)
+    pxeval =  [basis[i](x) for i in 1:spandimension]
+    return getbi(Q, T, pxeval)
+end
 ##function to solve replicator directly in original space
     ###discretize distribution and do numerical integration there
     ###sample from current distribution to get expected value with montecarlo integration
-##realistic f (project to legendere polynomials)--> get matrix of change of basis
