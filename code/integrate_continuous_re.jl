@@ -13,10 +13,9 @@ using Polynomials, SpecialPolynomials #to change basis from standard to legendre
 
 compute numerical value of the function u given a value, a rank, and the parameters
 """
-function getu(x, theta, r, coefficients)
-    u = 0
+function getu(x, theta, r, A)
     T = buildT(r)
-    Q = A2Q(coefficients, r)
+    Q = A2Q(A, r)
     b_vec = evaluatebi(Q, T, getbasispx(r), x, r)
     u = dot(b_vec, theta)
     return u
@@ -91,20 +90,21 @@ function test_integration()
     N = 1000 #integration resolution
     #sample coefficients of normal polynomial
     #get coefficients of Legendre basis
-    coeffs = 
-    ######################################################
-    parameters = (r, a, b, N, coeffs) #vector of parameters
+    A = sampleA(r)
+    parameters = (r, a, b, N, A) #vector of parameters
     #set up the problem and solve it
     problem = ODEProblem(re!, initial, tspan, parameters)
     sol = DifferentialEquations.solve(problem, Tsit5())
     return sol
 end
 
-function thetas2pi(theta, a, b, dx)
-    d = Normal(theta[1], theta[2])
-    dtrunc = truncated(d, a, b)
-    pdfvec = pdf.(dtrunc, a:dx:b)/(sum(pdf.(dtrunc, a:dx:b)))
-    return pdfvec
+"""
+    thetas2pi(x, theta, r, coefficients)
+
+provide value of distribution at x given the moments theta
+"""
+function thetas2pi(x, theta, r, coefficients)
+    return popdist(x, theta, r, coefficients)
 end
 
 ### Code to get at the bs
@@ -182,6 +182,7 @@ function evaluatebi(Q, T, basis, x, spandimension)
     pxeval =  [basis[i](x) for i in 1:spandimension]
     return getbi(Q, T, pxeval)
 end
+
 ##function to solve replicator directly in original space
     ###discretize distribution and do numerical integration there
     ###sample from current distribution to get expected value with montecarlo integration
