@@ -66,7 +66,7 @@ end
 """
     re!(dtheta, theta, p, t)
 
-replicator equation to integrate
+replicator equation to integrate in parameter space
 """
 function re!(dtheta, theta, p, t)
     r, a, b, N, coeffs = p
@@ -74,7 +74,7 @@ function re!(dtheta, theta, p, t)
     #write gradient function
     P(theta) = totalpopulation(popdist, a, b, N, theta, r, coeffs)
     #evaluate gradient
-    gradP = grad(central_fdm(5, 1), P, theta)[1]
+    gradP = grad(central_fdm(5, 1), P, theta)[1] #
     dtheta .= W*gradP
     return dtheta
 end
@@ -86,6 +86,8 @@ function test_integration()
     n = 2 #number of moments to describe the distribution
     a, b = (-1, 1) #trait domain
     initial = rand(n) #initial conditions
+    #initial = [0, 0]
+    #initial = [0, 1]
     tspan = (1, 1e3) #integration time span
     N = 1000 #integration resolution
     #sample coefficients of normal polynomial
@@ -94,7 +96,7 @@ function test_integration()
     parameters = (r, a, b, N, A) #vector of parameters
     #set up the problem and solve it
     problem = ODEProblem(re!, initial, tspan, parameters)
-    sol = DifferentialEquations.solve(problem, Tsit5())
+    sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
     return sol
 end
 
@@ -119,7 +121,7 @@ end
 function getlegendrecoeffs(order)
     coeffbin = zeros(order)
     coeffbin[order] = 1
-    p = Legendre(coeffbin) 
+    p = Legendre(coeffbin) #ARE THIS NORMALIZED?
     #transform to standard basis of monomials
     pst = convert(Polynomial, p)
     #get legendre coefficients
@@ -156,11 +158,11 @@ end
 
 #5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
 function computeQ(B)
-    U, S, V = svd(B)
+    U, S, V = svd(B) #check if I can outputing only U and S cuts signfificant time
     return U*sqrt.(diagm(S))
 end
 #Wrapper for all these functions
-function A2Q(A, spandimension)
+function A2Q(A, spandimension) #feed T as argument
     T = buildT(spandimension)
     B = computeB(A, T)
     return computeQ(B)
@@ -175,14 +177,62 @@ end
 function getbasispx(spandimension)
     return [Polynomial(coeffbinary(i, spandimension)) for i in 1:spandimension]
 end
-function getbi(Q, T, basis)
-    return Q*T*basis
+function getbi(Q, T, basis) #basis* = legendre basis of polynomials instead of monomials
+    return Q*T*basis #return Q*basis*
 end
 function evaluatebi(Q, T, basis, x, spandimension)
     pxeval =  [basis[i](x) for i in 1:spandimension]
     return getbi(Q, T, pxeval)
 end
 
-##function to solve replicator directly in original space
-    ###discretize distribution and do numerical integration there
-    ###sample from current distribution to get expected value with montecarlo integration
+###########################################################################################
+#TEST CODE
+###########################################################################################
+#what should f be? the product of f(x, y) and pi. 
+function evaluatefxy(A)
+    return fxy
+end
+
+function discretize(dist, moment_vec, point_eval)
+    #evaluate density of dist with moments moment_vec at point_eval
+    #normalize (half weight in the boundaries)
+    return dist_vec
+
+#what distribution do I choose?
+        #random variance
+        #uniform 
+        #in the latent space it is [0,0]
+        #scale by total population (add constant (1/widthofinterval) to basis functions)
+    #how do I ensure normalization?
+    #nomalize giving half weight to boundary points
+    #we have to match this with the approximation
+
+function growthrate()
+    #evaluate fxy at (x, y)
+    #multiply by w
+    return
+end
+
+#function to calculate total population by direct integration in discretized space
+function int_growth_rate(f, pars)
+    h = (b-a)/N
+    int = h * ( f(a, r) + f(b, r) ) / 2
+    #integrate numerically over y
+    for k=1:N-1
+        yk = (b-a) * k/N + a
+        int = int + h*f(yk, r)
+    end
+    return int
+end
+
+function re_test!(dw, w, p, t)
+    #unpack parameters
+    A = p
+    #initial moments
+    #initial conditions w0 (discretize initial distribution)
+    #calculate dwdt
+    dw = w*int_growth_rate(growt_rate, pars)
+    return dw
+end
+###discretize distribution and do numerical integration there
+###sample from current distribution to get expected value with montecarlo integration
