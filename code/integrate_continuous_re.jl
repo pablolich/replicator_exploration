@@ -207,14 +207,17 @@ function discretize(dist, moment_vec, point_eval)
     #nomalize giving half weight to boundary points
     #we have to match this with the approximation
 
-function growthrate()
+function growthrate(A, x, y, w)
     #evaluate fxy at (x, y)
+    fxy = x*A*y
     #multiply by w
+    
     return
 end
 
 #function to calculate total population by direct integration in discretized space
-function int_growth_rate(f, pars)
+function int_growth_rate(f, a, b, N, r)
+    #WHY IS r APPEARING HERE IF I AM NOT DOING AN APPROXIMATION?
     h = (b-a)/N
     int = h * ( f(a, r) + f(b, r) ) / 2
     #integrate numerically over y
@@ -225,13 +228,38 @@ function int_growth_rate(f, pars)
     return int
 end
 
-function re_test!(dw, w, p, t)
-    #unpack parameters
-    A = p
-    #initial moments
+function test_integration_discrete()
+    #set seed for reproducibility
+    seed = 1
+    rng = MersenneTwister(seed)
+    #SHOULD THIS BE R? BUT WHY, IF R IS FOR THE APPROXIMATION?
+    n = 2 #number of players
+    a, b = (-1, 1) #domain
+    N = 1000 #integration resolution
+    tspan = (1, 1e3) #integration time span
+    #write vector of points where to evaluate distribution
+    evalpoints = collect(range(-1,1, N))
+    #moments of distribution
+    mu=0
+    sigma=1
+    #set a gaussian distribution with mean mu and variance sigma
+    dist = Normal(mu, sigma)
     #initial conditions w0 (discretize initial distribution)
+    w0 = discretize(dist, moments, evalpoints)
+    A = sampleA(n)
+    parameters = (A, moments, dist, a, b, N, r) #vector of parameters
+    #set up the problem and solve it
+    problem = ODEProblem(re_discrete!, w0, tspan, parameters)
+    sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
+    return sol
+end
+
+function re_discrete!(dw, w, p, t)
+    #unpack parameters (payoff coefficients, vector of moments, distribution,
+    #evaluation sparsity)
+    A, moments, dist, a, b, N, r = p
     #calculate dwdt
-    dw = w*int_growth_rate(growt_rate, pars)
+    dw = w*int_growth_rate(growt_rate, a, b, N, r)
     return dw
 end
 ###discretize distribution and do numerical integration there
