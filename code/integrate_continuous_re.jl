@@ -177,9 +177,11 @@ end
 function getbasispx(spandimension)
     return [Polynomial(coeffbinary(i, spandimension)) for i in 1:spandimension]
 end
+
 function getbi(Q, T, basis) #basis* = legendre basis of polynomials instead of monomials
     return Q*T*basis #return Q*basis*
 end
+
 function evaluatebi(Q, T, basis, x, spandimension)
     pxeval =  [basis[i](x) for i in 1:spandimension]
     return getbi(Q, T, pxeval)
@@ -188,15 +190,19 @@ end
 ###########################################################################################
 #TEST CODE
 ###########################################################################################
-#what should f be? the product of f(x, y) and pi. 
-function evaluatefxy(A)
-    return fxy
-end
+#integrate directly by discretizing the continuous space
 
-function discretize(dist, moment_vec, point_eval)
+function normalize(density_vec)
+    #get normalizing factor (half weight in the boundaries)
+    T = sum(density_vec[2:end-1]) + 0.5*(density_vec[1]+density_vec[end])
+    return density_vec/T
+
+function discretize(dist, point_eval)
     #evaluate density of dist with moments moment_vec at point_eval
-    #normalize (half weight in the boundaries)
-    return dist_vec
+    density_vec = [pdf(dist, i) for i in point_eval] #WHAT VALUES ARE THESE? THEY ARE NOT NORMALIZED
+    #normalizing factor
+    norm_density_vec = normalize(density_vec)
+    return norm_density_vec
 
 #what distribution do I choose?
         #random variance
@@ -207,23 +213,22 @@ function discretize(dist, moment_vec, point_eval)
     #nomalize giving half weight to boundary points
     #we have to match this with the approximation
 
+#what should f be? the product of f(x, y) and w. 
+
 function growthrate(A, x, y, w)
     #evaluate fxy at (x, y)
+    #IS x OBTAINED BY INTERPOLATING BETWEEN THE VECTOR ELEMENTS W?
     fxy = x*A*y
-    #multiply by w
-    
-    return
+    return sum(fxy*w)
 end
 
-#function to calculate total population by direct integration in discretized space
-function int_growth_rate(f, a, b, N, r)
-    #WHY IS r APPEARING HERE IF I AM NOT DOING AN APPROXIMATION?
+function int_growth_rate(f, A, a, b, N, w)
     h = (b-a)/N
-    int = h * ( f(a, r) + f(b, r) ) / 2
+    int = h * ( f(A, x, a, w) + f(A, x, b, w) ) / 2
     #integrate numerically over y
     for k=1:N-1
         yk = (b-a) * k/N + a
-        int = int + h*f(yk, r)
+        int = int + h*f(A, x, yk, w)
     end
     return int
 end
@@ -245,9 +250,9 @@ function test_integration_discrete()
     #set a gaussian distribution with mean mu and variance sigma
     dist = Normal(mu, sigma)
     #initial conditions w0 (discretize initial distribution)
-    w0 = discretize(dist, moments, evalpoints)
+    w0 = discretize(dist, evalpoints)
     A = sampleA(n)
-    parameters = (A, moments, dist, a, b, N, r) #vector of parameters
+    parameters = (A, moments, dist, a, b, N) #vector of parameters
     #set up the problem and solve it
     problem = ODEProblem(re_discrete!, w0, tspan, parameters)
     sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
@@ -257,10 +262,12 @@ end
 function re_discrete!(dw, w, p, t)
     #unpack parameters (payoff coefficients, vector of moments, distribution,
     #evaluation sparsity)
-    A, moments, dist, a, b, N, r = p
+    A, moments, dist, a, b, N = p
+    #re-normalize w
+    w = normalize(w)
     #calculate dwdt
-    dw = w*int_growth_rate(growt_rate, a, b, N, r)
+    dw = w*int_growth_rate(growtrate, A, a, b, N, w)
     return dw
 end
-###discretize distribution and do numerical integration there
+
 ###sample from current distribution to get expected value with montecarlo integration
