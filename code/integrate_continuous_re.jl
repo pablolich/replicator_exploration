@@ -5,7 +5,7 @@ using LinearAlgebra #to build rotation matrices
 using FiniteDifferences #to calculate gradients numerically
 using Random
 using Distributions #to go from parameters to distributions
-using Polynomials, SpecialPolynomials #to change basis from standard to legendre
+using Polynomials, SpecialPolynomials, PolynomialMatrices #to change basis from standard to legendre
 
 
 """
@@ -77,27 +77,6 @@ function re!(dtheta, theta, p, t)
     gradP = grad(central_fdm(5, 1), P, theta)[1] #
     dtheta .= W*gradP
     return dtheta
-end
-
-function test_integration()
-    seed = 1
-    rng = MersenneTwister(seed)
-    r = 2 #rank of the approximation 
-    n = 2 #number of moments to describe the distribution
-    a, b = (-1, 1) #trait domain
-    initial = rand(n) #initial conditions
-    #initial = [0, 0]
-    #initial = [0, 1]
-    tspan = (1, 1e3) #integration time span
-    N = 1000 #integration resolution
-    #sample coefficients of normal polynomial
-    #get coefficients of Legendre basis
-    A = sampleA(r)
-    parameters = (r, a, b, N, A) #vector of parameters
-    #set up the problem and solve it
-    problem = ODEProblem(re!, initial, tspan, parameters)
-    sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
-    return sol
 end
 
 """
@@ -190,47 +169,78 @@ end
 ###########################################################################################
 #TEST CODE
 ###########################################################################################
-#integrate directly by discretizing the continuous space
 
-function normalize(density_vec)
-    #get normalizing factor (half weight in the boundaries)
-    T = sum(density_vec[2:end-1]) + 0.5*(density_vec[1]+density_vec[end])
-    return density_vec/T
-
-function discretize(dist, point_eval)
-    #evaluate density of dist with moments moment_vec at point_eval
-    density_vec = [pdf(dist, i) for i in point_eval] #WHAT VALUES ARE THESE? THEY ARE NOT NORMALIZED
-    #normalizing factor
-    norm_density_vec = normalize(density_vec)
-    return norm_density_vec
-
-#what distribution do I choose?
-        #random variance
-        #uniform 
-        #in the latent space it is [0,0]
-        #scale by total population (add constant (1/widthofinterval) to basis functions)
-    #how do I ensure normalization?
-    #nomalize giving half weight to boundary points
-    #we have to match this with the approximation
-
-#what should f be? the product of f(x, y) and w. 
-
-function growthrate(A, x, y, w)
-    #evaluate fxy at (x, y)
-    #IS x OBTAINED BY INTERPOLATING BETWEEN THE VECTOR ELEMENTS W?
-    fxy = x*A*y
-    return sum(fxy*w)
+function get_vander(xvec, n)
+    Vmat =  collect(ntuple(i -> xvec::Array{Float64,1} .^ i::Int64, n))
+    return transpose(mapreduce(permutedims, vcat, Vmat))
 end
 
-function int_growth_rate(f, A, a, b, N, w)
-    h = (b-a)/N
-    int = h * ( f(A, x, a, w) + f(A, x, b, w) ) / 2
-    #integrate numerically over y
-    for k=1:N-1
-        yk = (b-a) * k/N + a
-        int = int + h*f(A, x, yk, w)
-    end
-    return int
+function get_F(V, A)
+    return V*A*transpose(V)
+end
+
+function get_weights(deltax, N)
+    wvec = deltax*ones(N)
+    wvec[1] = 0.5*wvec[1]
+    wvec[end] = 0.5*wvec[end]
+    return wvec
+end
+
+function quad_int(samples, weights)
+    return dot(samples, weights)
+end
+
+function normalize(density_vec, weights)
+    #get normalizing factor (half weight in the boundaries)
+    #apply trapezoidal integration to the set of points, and divide by that
+    T = quad_int(density_vec, weights)
+    return density_vec/T
+end
+
+function discretize(dist, point_eval, weights)
+    #evaluate density of dist with moments moment_vec at point_eval
+    pvec = [pdf(dist, i) for i in point_eval] #height of points interpolated with linear spline
+    #normalizing factor
+    T = quad_int(pvec, weights)
+    return pvec/T
+end
+
+function re_discrete!(dpdt, p, pars, t)
+    #unpack parameters (payoff coefficients, vector of moments, distribution,
+    #evaluation sparsity)
+    p, F, wvec = pars
+    #re-normalize w
+    T = quad_int(p, wvec)
+    p = p/T
+    #compute differential change
+    dpdt = diagm(p)*(F*diagm(p)*wvec)
+    return dpdt
+end
+
+
+###########################################################################################
+#COMPARE THE TWO APPROACHES
+###########################################################################################
+
+function test_integration()
+    seed = 1
+    rng = MersenneTwister(seed)
+    r = 2 #rank of the approximation 
+    n = 2 #number of moments to describe the distribution
+    a, b = (-1, 1) #trait domain
+    initial = rand(n) #initial conditions
+    #initial = [0, 0]
+    #initial = [0, 1]
+    tspan = (1, 1e3) #integration time span
+    N = 1000 #integration resolution
+    #sample coefficients of normal polynomial
+    #get coefficients of Legendre basis
+    A = sampleA(r)
+    parameters = (r, a, b, N, A) #vector of parameters
+    #set up the problem and solve it
+    problem = ODEProblem(re!, initial, tspan, parameters)
+    sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
+    return sol
 end
 
 function test_integration_discrete()
@@ -238,36 +248,37 @@ function test_integration_discrete()
     seed = 1
     rng = MersenneTwister(seed)
     #SHOULD THIS BE R? BUT WHY, IF R IS FOR THE APPROXIMATION?
-    n = 2 #number of players
+    n = 2 #order of the polynomial payoff function
+    #get basis of monomials
+    basis = getbasispx(n)
     a, b = (-1, 1) #domain
     N = 1000 #integration resolution
     tspan = (1, 1e3) #integration time span
     #write vector of points where to evaluate distribution
+    deltax = (b-a)/(N-1)
     evalpoints = collect(range(-1,1, N))
+    #get weights of quadrature integration
+    wvec = get_weights(deltax, N)
     #moments of distribution
     mu=0
     sigma=1
     #set a gaussian distribution with mean mu and variance sigma
     dist = Normal(mu, sigma)
     #initial conditions w0 (discretize initial distribution)
-    w0 = discretize(dist, evalpoints)
+    p0 = discretize(dist, evalpoints, wvec)
     A = sampleA(n)
-    parameters = (A, moments, dist, a, b, N) #vector of parameters
+    #compute vandermonde matrix of monomial basis
+    V = get_vander(evalpoints, n)
+    F = get_F(V, A)
+    parameters = (p0, F, wvec) #vector of parameters
     #set up the problem and solve it
-    problem = ODEProblem(re_discrete!, w0, tspan, parameters)
-    sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
+    problem = ODEProblem(re_discrete!, p0, tspan, parameters)
+    sol = DifferentialEquations.solve(problem, Tsit5())
     return sol
 end
 
-function re_discrete!(dw, w, p, t)
-    #unpack parameters (payoff coefficients, vector of moments, distribution,
-    #evaluation sparsity)
-    A, moments, dist, a, b, N = p
-    #re-normalize w
-    w = normalize(w)
-    #calculate dwdt
-    dw = w*int_growth_rate(growtrate, A, a, b, N, w)
-    return dw
+"""
+Evaluate distribution with given moments at given evaluation points
+"""
+function moments2densities(evalpoints, moment_vec, dist)
 end
-
-###sample from current distribution to get expected value with montecarlo integration
