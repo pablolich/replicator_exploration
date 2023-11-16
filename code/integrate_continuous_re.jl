@@ -83,12 +83,12 @@ end
 replicator equation to integrate in parameter space
 """
 function re!(dtheta, theta, p, t)
-    r, evalpoints N, coeffs = p
+    r, evalpoints, N, coeffs, weights = p
     W = buildW(r)
     #write function to calculate total population
     #integrate samples of population density for quadrature weights
     #population density are computed as a function of theta
-    P(theta) = quad_int(get_popdist_samples(evalpoints, theta, r, coefficients), weights)
+    P(theta) = quad_int(get_popdist_samples(evalpoints, theta, r, coeffs), weights)
     #evaluate gradient
     gradP = grad(central_fdm(5, 1), P, theta)[1] #
     dtheta .= W*gradP
@@ -248,7 +248,7 @@ A = sampleA(n) #IS THIS TRUE?
 initial_moments = [0, 1]
 
 #specific parameters for integration in latent space
-par_lat = (r, evalpoints N, A)
+par_lat = (r, evalpoints, N, A, wvec)
 #set up ODE problem and solve it
 problem = ODEProblem(re!, initial_moments, tspan, par_lat)
 sol = DifferentialEquations.solve(problem, Tsit5()) #what is this doing? Do same time discretization as this method
@@ -265,7 +265,6 @@ par_ori = (F, wvec) #vector of parameters
 #set up ODE problem and solve it
 problem = ODEProblem(re_discrete!, p0, tspan, par_ori)
 sol = DifferentialEquations.solve(problem, Tsit5())
-
 
 """
 Evaluate distribution with given moments at given evaluation points
