@@ -3,9 +3,10 @@ using QuadGK #for numerical integration of a function
 using DifferentialEquations #integrate ODEs
 using LinearAlgebra #to build rotation matrices
 using FiniteDifferences #to calculate gradients numerically
-using Random
+using Random #sample random numbers
 using Distributions #to go from parameters to distributions
-using Polynomials, SpecialPolynomials, PolynomialMatrices #to change basis from standard to legendre
+using Polynomials, SpecialPolynomials #to change basis from standard to legendre
+using Plots #plot norms between two solutions
 
 ###########################################################################################
 #FUNCTIONS USED ACCROSS ALL THE CODE
@@ -233,10 +234,8 @@ function multiplediscretizations(evalpoints, par_mat, r, coefficients)
     for i in 1:ntpoints
         #get vector of moments
         par_vec_i = par_mat[i,:]
-        #evaluate distribution
-        density_vec_i = get_popdist_samples(evalpoints, par_vec_i, r, coefficients) #coefficients = A
-        #store
-        dist_mat[i,:]
+        #evaluate distribution and store
+        dist_mat[i, :] = get_popdist_samples(evalpoints, par_vec_i, r, coefficients) #coefficients = A
     end
     return dist_mat
 end
@@ -260,7 +259,7 @@ function comparedynamics(solution1, solution2, norm_vec)
     for i in 1:tsteps
         #get solutions at time i
         solution1ti = solution1[i,:]
-        solution2ti = solution2[i,:]
+        solution2ti = solution2[i,:] 
         #compare them with each norm
         norm_mat[i,:] = comparevectors(solution1ti, solution2ti, [1,2,Inf])
     end
@@ -337,3 +336,4 @@ end
 #compare solutions
 norm_mat = comparedynamics(solution1, solution2, [1, 2, Inf])
 #plot
+plot(x, log.(norm_mat), label=["1" "2" "Inf"])
