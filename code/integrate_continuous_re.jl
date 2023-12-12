@@ -14,6 +14,7 @@
 
     #sample coefficients of polynomial in standard basis of monomials
     function sampleA(spandimension)
+        #SET A TO BE THE SAME EVERY TIME
         randmat = rand(spandimension, spandimension)
         A = 1/2*(randmat-transpose(randmat))
         return A
@@ -33,7 +34,7 @@
     Perform quadrature integration
     """
     function quad_int(samples, weights)
-        return dot(samples, weights)
+        return transpose(samples)*weights
     end
 
     ###########################################################################################
@@ -55,6 +56,9 @@
         return Q*T*basis #return Q*basis*
     end
 
+    """
+    orthogonal basis functions b(x) such that f(x,y) = b(x)' W b(y)
+    """
     function evaluatebi(Q, T, basis, x, spandimension)
         pxeval =  [basis[i](x) for i in 1:spandimension]
         return getbi(Q, T, pxeval)
@@ -75,11 +79,11 @@
 
     #4. Compute B by doing T-1AT
     function computeB(A, T)
-        return invertT(T)*A*T
+        return transpose(invertT(T))*A*invertT(T) #CORRECTED FROM invertT(T)*A*T
     end
 
     #Wrapper for all these functions
-    function A2Q(A, spandimension, T)
+    function A2Q(A, T)
         B = computeB(A, T)
         return computeQ(B)
     end
@@ -118,7 +122,7 @@
     """
     function getu(x, theta, r, A)
         T = buildT(r)
-        Q = A2Q(A, r, T)
+        Q = A2Q(A, T)
         b_vec = evaluatebi(Q, T, getbasispx(r), x, r)
         u = dot(b_vec, theta)
         return u
@@ -160,20 +164,33 @@
         return W
     end
 
+    function func(Q, T, r, x, theta, coefficients)
+        evaluatebi(Q, T, getbasispx(r), x, r)*popdist(x, theta, r, coefficients)
+    end
+    function expectedvalue(x, theta, r, coefficients, weights)
+        T = buildT(r)
+        Q = A2Q(A, T)
+        samplesfvec = [func(Q, T, r, i, theta, coefficients) for i in x]
+        samplesf = mapreduce(permutedims, vcat, samplesfvec)
+        quad_int(samplesf, weights)
+    end
+
     """
         re!(dtheta, theta, p, t)
 
     replicator equation to integrate in parameter space
     """
     function re!(dtheta, theta, p, t)
-        r, evalpoints, N, coeffs, weights = p #coeffs=A
+        r, evalpoints, N, coeffss, weights = p #coeffs=A
         W = buildW(r)
         #write function to calculate total population
         #integrate samples of population density for quadrature weights
         #population density are computed as a function of theta
-        P(theta) = quad_int(get_popdist_samples(evalpoints, theta, r, coeffs), weights)
+        P(theta) = quad_int(get_popdist_samples(evalpoints, theta, r, coeffss), weights)
         #evaluate gradient
         gradP = grad(central_fdm(5, 1), P, theta)[1] #
+        expectedvals = expectedvalue(evalpoints, theta, r, coeffss, weights)
+        println(norm(gradP .- expectedvals, 2))
         #in case there is a bug, try expected values
         dtheta .= W*gradP
         return dtheta
@@ -301,7 +318,7 @@
     tspan = (1, 1e3) #integration time span
     A = sampleA(n) #IS THIS TRUE? 
     #initial distribution
-    initial_parameters = [1, 1]
+    initial_parameters = repeat([1.0], r)
 
     #specific parameters for integration in latent space
     par_lat = (r, evalpoints, N, A, wvec)
@@ -351,7 +368,7 @@
         ylimits = (-0.1, 4.1),
         legend=false,
         size=(600, 300))
-    savefig("../figures/integrations.pdf")
+    savefig("../replicator_exploration/figures/integrations.pdf")
 #plot distances
 plot(1:size(norm_mat, 1), log.(norm_mat), label=["1" "2" "Inf"])
 
