@@ -53,7 +53,7 @@
     end
 
     function getbi(Q, T, basis) #basis* = legendre basis of polynomials instead of monomials
-        return Q*T*basis #return Q*basis*
+        return transpose(Q)*T*basis #return Q*basis*
     end
 
     """
@@ -65,9 +65,9 @@
     end
 
     #5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
-    function computeQ(B)
+    function computeQ(B, r)
         U, S, V = svd(B) #check if I can outputing only U and S cuts signfificant time
-        return U*sqrt.(diagm(S))
+        return V[:, 1:r]*sqrt.(diagm(S[1:r]))
     end
 
     #3. Write code to invert T efficiently, since it is a triangular  matrix
@@ -83,9 +83,9 @@
     end
 
     #Wrapper for all these functions
-    function A2Q(A, T)
+    function A2Q(A, T, r)
         B = computeB(A, T)
-        return computeQ(B)
+        return computeQ(B, r)
     end
 
     function append0s(vectofill, finaldimension)
@@ -120,10 +120,10 @@
 
     compute numerical value of the function u given a value, a rank, and the parameters
     """
-    function getu(x, theta, r, A)
-        T = buildT(r)
-        Q = A2Q(A, T)
-        b_vec = evaluatebi(Q, T, getbasispx(r), x, r)
+    function getu(x, theta, n, A, r)
+        T = buildT(n)
+        Q = A2Q(A, T, r)
+        b_vec = evaluatebi(Q, T, getbasispx(n), x, n)
         u = dot(b_vec, theta)
         return u
     end
@@ -133,8 +133,8 @@
 
     compute the numerical value of the population distribution at x, theta
     """
-    function popdist(x, theta, r, coefficients)
-        u = getu(x, theta, r, coefficients)
+    function popdist(x, theta, n, coefficients, r)
+        u = getu(x, theta, n, coefficients, r)
         return exp(u)
     end
 
@@ -143,8 +143,8 @@
 
     compute the numerical value of the population distribution at multiple points
     """
-    function get_popdist_samples(evalpoints, theta, r, coeffs)
-        [popdist(i, theta, r, coeffs) for i in evalpoints]
+    function get_popdist_samples(evalpoints, theta, b_vec)#n, coeffs, r)
+        [popdist(i, theta, n, coeffs, r) for i in evalpoints]
     end
 
     """
@@ -167,8 +167,9 @@
     function func(Q, T, r, x, theta, coefficients)
         evaluatebi(Q, T, getbasispx(r), x, r)*popdist(x, theta, r, coefficients)
     end
+
     function expectedvalue(x, theta, r, coefficients, weights)
-        T = buildT(r)
+        T = buildT(n)
         Q = A2Q(A, T)
         samplesfvec = [func(Q, T, r, i, theta, coefficients) for i in x]
         samplesf = mapreduce(permutedims, vcat, samplesfvec)
@@ -181,18 +182,19 @@
     replicator equation to integrate in parameter space
     """
     function re!(dtheta, theta, p, t)
-        r, evalpoints, N, coeffss, weights = p #coeffs=A
+        r, evalpoints, N, coeffss, weights, n = p #coeffs=A
         W = buildW(r)
         #write function to calculate total population
         #integrate samples of population density for quadrature weights
         #population density are computed as a function of theta
-        P(theta) = quad_int(get_popdist_samples(evalpoints, theta, r, coeffss), weights)
+        P(theta) = quad_int(get_popdist_samples(evalpoints, theta, n, coeffss, r), weights)
         #evaluate gradient
         gradP = grad(central_fdm(5, 1), P, theta)[1] #
-        expectedvals = expectedvalue(evalpoints, theta, r, coeffss, weights)
-        println(norm(gradP .- expectedvals, 2))
+        #gradP = expectedvalue(evalpoints, theta, r, coeffss, weights)
+        #println(norm(gradP .- expectedvals, 2))
         #in case there is a bug, try expected values
         dtheta .= W*gradP
+        println(dtheta)
         return dtheta
     end
 
@@ -236,7 +238,7 @@
     """
     Create vector discretized distributions for each time step
     """
-    function multiplediscretizations(evalpoints, par_mat, r, coefficients)
+    function multiplediscretizations(evalpoints, par_mat, r, coefficients, n)
         ntpoints = size(par_mat, 1)
         nevals = length(evalpoints)
         dist_mat = Array{Float64}(undef, (ntpoints, nevals))
@@ -244,7 +246,7 @@
             #get vector of moments
             par_vec_i = par_mat[i,:]
             #evaluate distribution and store
-            dist_mat[i, :] = get_popdist_samples(evalpoints, par_vec_i, r, coefficients) #coefficients = A
+            dist_mat[i, :] = get_popdist_samples(evalpoints, par_vec_i, n, coefficients, r) #coefficients = A
         end
         return dist_mat
     end
@@ -306,7 +308,7 @@
     seed = 1
     rng = MersenneTwister(seed)
     r = 2 #rank of the approximation 
-    n = 2 #degree of polynomials in original basis
+    n = 4 #degree of polynomials in original basis
     a, b = (-1, 1) #trait domain
     N = 1000 #integration resolution
     #resolution window size
@@ -316,19 +318,23 @@
     #get weights of quadrature integration
     wvec = get_weights(deltax, N)
     tspan = (1, 1e3) #integration time span
-    A = sampleA(n) #IS THIS TRUE? 
+    #A = sampleA(n) #IS THIS TRUE? 
+    A = -1.0 .* [0 0 1 0; 0 0 0 0; -1 0 0 0; 0 0 0 0]
+    #compute transpose(Q)*T*basis (for each x) bi's are fixed.
+
     #initial distribution
-    initial_parameters = repeat([1.0], r)
+    #initial_parameters = repeat([1.0], r)
+    initial_parameters = randn(rng, r)
 
     #specific parameters for integration in latent space
-    par_lat = (r, evalpoints, N, A, wvec)
+    par_lat = (r, evalpoints, N, A, wvec, n)
     #set up ODE problem and solve it
     problemlatent = ODEProblem(re!, initial_parameters, tspan, par_lat)
+    println("Integrating in latent space ")
     sollatent = DifferentialEquations.solve(problemlatent) #what is this doing? Do same time discretization as this method
     
-    #specific parameters for integration in original space
     #set a gaussian distribution with mean mu and variance sigma
-    p0 = get_popdist_samples(evalpoints, initial_parameters, r, A)
+    p0 = get_popdist_samples(evalpoints, initial_parameters, n, A, r)
     #initial conditions w0 (discretize initial distribution)
     #compute vandermonde matrix of monomial basis
     V = get_vander(evalpoints, n)
@@ -336,6 +342,7 @@
     par_ori = (F, wvec) #vector of parameters
     #set up ODE problem and solve it
     problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
+    println("Integrating in original space")
     soldisc = DifferentialEquations.solve(problemdisc)
 
     #evaluate dense solutions at same timepoints
@@ -344,14 +351,14 @@
         solution2 = mapreduce(permutedims, vcat, soldisc(sollatent.t).u)
         #discretize latent space solution
         sollatent_mat = mapreduce(permutedims, vcat, sollatent.u)
-        solution1 = multiplediscretizations(evalpoints, sollatent_mat, r, A)
+        solution1 = multiplediscretizations(evalpoints, sollatent_mat, r, A, n)
         tpoints = sollatent.t
     else
         #evaluate sollat at the times of solldisc
         sollat_tdisc = sollatent(soldisc.t)
         #discretize solution in latent space on the distribution space, evaluated at the time points of the discrete
         sollat_tdisc_mat = mapreduce(permutedims, vcat, sollat_tdisc.u) #first, reshape
-        solution1 = multiplediscretizations(evalpoints, sollat_tdisc_mat, r, A)
+        solution1 = multiplediscretizations(evalpoints, sollat_tdisc_mat, r, A, n)
         solution2 = mapreduce(permutedims, vcat, soldisc.u) #reshape
         tpoints = soldisc.t
     end
