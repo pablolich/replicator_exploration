@@ -60,7 +60,7 @@
     orthogonal basis functions b(x) such that f(x,y) = b(x)' W b(y)
     """
     function evaluatebi(Q, T, basis, x, spandimension)
-        pxeval =  [basis[i](x) for i in 1:spandimension]
+        pxeval = [basis[i](x) for i in 1:spandimension]
         return getbi(Q, T, pxeval)
     end
 
@@ -115,17 +115,13 @@
         return T
     end
 
-    """
-        getu(x, theta, r)
-
-    compute numerical value of the function u given a value, a rank, and the parameters
-    """
-    function getu(x, theta, n, A, r)
-        T = buildT(n)
-        Q = A2Q(A, T, r)
-        b_vec = evaluatebi(Q, T, getbasispx(n), x, n)
-        u = dot(b_vec, theta)
-        return u
+    function evaluatebvec(Q, T, basis, evalpoints, n, r)
+        npoints = length(evalpoints)
+        bmat = Array{Float64}(undef, npoints, r)
+        for i in 1:npoints
+            bmat[i,:] = evaluatebi(Q, T, basis, evalpoints[i], n)
+        end
+        return bmat
     end
 
     """
@@ -133,18 +129,8 @@
 
     compute the numerical value of the population distribution at x, theta
     """
-    function popdist(x, theta, n, coefficients, r)
-        u = getu(x, theta, n, coefficients, r)
-        return exp(u)
-    end
-
-    """
-        get_popdist_samples(evalpoints, theta, r coeffs)
-
-    compute the numerical value of the population distribution at multiple points
-    """
-    function get_popdist_samples(evalpoints, theta, b_vec)#n, coeffs, r)
-        [popdist(i, theta, n, coeffs, r) for i in evalpoints]
+    function popdist(theta, bmat)
+        return exp.(bmat*theta)
     end
 
     """
@@ -182,19 +168,13 @@
     replicator equation to integrate in parameter space
     """
     function re!(dtheta, theta, p, t)
-        r, evalpoints, N, coeffss, weights, n = p #coeffs=A
-        W = buildW(r)
-        #write function to calculate total population
+        W, bmat, weights = p #coeffs=A
         #integrate samples of population density for quadrature weights
-        #population density are computed as a function of theta
-        P(theta) = quad_int(get_popdist_samples(evalpoints, theta, n, coeffss, r), weights)
+        P(theta) = quad_int(popdist(theta, bmat), weights)
         #evaluate gradient
         gradP = grad(central_fdm(5, 1), P, theta)[1] #
         #gradP = expectedvalue(evalpoints, theta, r, coeffss, weights)
-        #println(norm(gradP .- expectedvals, 2))
-        #in case there is a bug, try expected values
         dtheta .= W*gradP
-        println(dtheta)
         return dtheta
     end
 
@@ -203,7 +183,7 @@
     ###########################################################################################
 
     function get_vander(xvec, n)
-        Vmat =  collect(ntuple(i -> xvec::Array{Float64,1} .^ i::Int64, n))
+        Vmat =  collect(ntuple(i -> xvec::Array{Float64,1} .^ (i-1)::Int64, n))
         return transpose(mapreduce(permutedims, vcat, Vmat))
     end
 
@@ -224,8 +204,8 @@
         #integration weights (wvec)
         F, wvec = pars
         #re-normalize p using quadrature rule
-        T = quad_int(p, wvec)
-        p = p/T
+        #T = quad_int(p, wvec)
+        #p = p ./ T
         #compute differential change
         dpdt .= diagm(p)*(F*diagm(p)*wvec)
         return dpdt
@@ -238,7 +218,7 @@
     """
     Create vector discretized distributions for each time step
     """
-    function multiplediscretizations(evalpoints, par_mat, r, coefficients, n)
+    function multiplediscretizations(par_mat, bmat)
         ntpoints = size(par_mat, 1)
         nevals = length(evalpoints)
         dist_mat = Array{Float64}(undef, (ntpoints, nevals))
@@ -246,7 +226,7 @@
             #get vector of moments
             par_vec_i = par_mat[i,:]
             #evaluate distribution and store
-            dist_mat[i, :] = get_popdist_samples(evalpoints, par_vec_i, n, coefficients, r) #coefficients = A
+            dist_mat[i, :] = popdist(par_vec_i, bmat) #coefficients = A
         end
         return dist_mat
     end
@@ -308,6 +288,7 @@
     seed = 1
     rng = MersenneTwister(seed)
     r = 2 #rank of the approximation 
+    W = buildW(r)
     n = 4 #degree of polynomials in original basis
     a, b = (-1, 1) #trait domain
     N = 1000 #integration resolution
@@ -319,22 +300,30 @@
     wvec = get_weights(deltax, N)
     tspan = (1, 1e3) #integration time span
     #A = sampleA(n) #IS THIS TRUE? 
-    A = -1.0 .* [0 0 1 0; 0 0 0 0; -1 0 0 0; 0 0 0 0]
+    A = -1.0 .* [0 0 -1 0; 
+                 0 0 0 0; 
+                 1 0 0 0; 
+                 0 0 0 0]
     #compute transpose(Q)*T*basis (for each x) bi's are fixed.
-
-    #initial distribution
-    #initial_parameters = repeat([1.0], r)
-    initial_parameters = randn(rng, r)
+    T = buildT(n)
+    B = computeB(A, T)
+    Q = computeQ(B, r)
+    monomialbasis = getbasispx(n)
+    #construct matrix of coefficients
+    bmat = evaluatebvec(Q, T, monomialbasis, evalpoints, n, r)
+    #set initial parameters
+    initial_parameters = repeat([1.0], r)
+    #initial_parameters = randn(rng, r)
 
     #specific parameters for integration in latent space
-    par_lat = (r, evalpoints, N, A, wvec, n)
+    par_lat = (W, bmat, wvec)
     #set up ODE problem and solve it
     problemlatent = ODEProblem(re!, initial_parameters, tspan, par_lat)
     println("Integrating in latent space ")
     sollatent = DifferentialEquations.solve(problemlatent) #what is this doing? Do same time discretization as this method
     
-    #set a gaussian distribution with mean mu and variance sigma
-    p0 = get_popdist_samples(evalpoints, initial_parameters, n, A, r)
+    #get initial distribution
+    p0 = popdist(initial_parameters, bmat)
     #initial conditions w0 (discretize initial distribution)
     #compute vandermonde matrix of monomial basis
     V = get_vander(evalpoints, n)
@@ -351,14 +340,14 @@
         solution2 = mapreduce(permutedims, vcat, soldisc(sollatent.t).u)
         #discretize latent space solution
         sollatent_mat = mapreduce(permutedims, vcat, sollatent.u)
-        solution1 = multiplediscretizations(evalpoints, sollatent_mat, r, A, n)
+        solution1 = multiplediscretizations(sollatent_mat, bmat)
         tpoints = sollatent.t
     else
         #evaluate sollat at the times of solldisc
         sollat_tdisc = sollatent(soldisc.t)
         #discretize solution in latent space on the distribution space, evaluated at the time points of the discrete
         sollat_tdisc_mat = mapreduce(permutedims, vcat, sollat_tdisc.u) #first, reshape
-        solution1 = multiplediscretizations(evalpoints, sollat_tdisc_mat, r, A, n)
+        solution1 = multiplediscretizations(sollat_tdisc_mat, bmat)
         solution2 = mapreduce(permutedims, vcat, soldisc.u) #reshape
         tpoints = soldisc.t
     end
@@ -379,7 +368,10 @@
 #plot distances
 plot(1:size(norm_mat, 1), log.(norm_mat), label=["1" "2" "Inf"])
 
-
-#THINGS TO DO
-#try n large, and replace A with SVD approximation of rank r
-#dynamic fitness landscapes
+#save data to plot in latex: tpoints (x-axis), evalpoints (y-axis), density (z-axis)
+#to build the file, create a matrix of three columns, and length(evalpoints) vertically 
+#separated blocks. Each block goes from 1:length(tpoints), and the y is constant, advancing
+#one unit at each block. Since there are length(evalpoints) different values, 
+#there should be length(evalpoints) different blocks. Every time t getst to length(tpoints), 
+#introduce a white line. 
+#maybe do this with R, or with the terminal?
