@@ -7,6 +7,8 @@
     using Distributions #to go from parameters to distributions
     using Polynomials, SpecialPolynomials #to change basis from standard to legendre
     using Plots #plot norms between two solutions
+    using Permutations, Kronecker #to do Andrew's magic
+    using DelimitedFiles
 
     ###########################################################################################
     #FUNCTIONS USED ACCROSS ALL THE CODE
@@ -64,10 +66,38 @@
         return getbi(Q, T, pxeval)
     end
 
-    #5. Compute Q by doing the SVD of B, as Q = U sqrt(S)
+    function buildPvec(r)
+        vec = Array{Int64}(undef, r)
+        for i in 1:r
+            if i <= r/2
+                vec[i] = 2*i
+            else
+                vec[i] = 2*(r-i+1)-1
+            end
+        end
+        return vec
+    end
+
+    function buildP(r)
+        transpose(Matrix(Permutation(buildPvec(r))))
+    end
+
     function computeQ(B, r)
-        U, S, V = svd(B) #check if I can outputing only U and S cuts signfificant time
-        return V[:, 1:r]*sqrt.(diagm(S[1:r]))
+        eigens, U = eigen(B)
+        n = length(eigens)
+        filter = I(n)[setdiff(1:end, (r÷2+1):(n-r÷2)),:]
+        indsort = sortperm(imag(eigens))
+        Psort = Matrix(Permutation(indsort))
+        Usorted = U*Psort
+        eigenssorted = transpose(Psort)*eigens
+        Usfilt = Usorted*transpose(filter)
+        eigensfilt = filter*eigenssorted
+        P = buildP(r)
+        M = 1/sqrt(2) .* [1 -1im; 1 1im]
+        #return V
+        V = Usfilt*P*(I(r÷2) ⊗ M)
+        Q = V*sqrt.(diagm(abs.(transpose(P)*eigensfilt)))
+        return real(Q)
     end
 
     #3. Write code to invert T efficiently, since it is a triangular  matrix
@@ -285,25 +315,25 @@
     #COMPARE WITH DIFFERENT DISCRETIZATION FINNESS
 
     #general parameters for the two approaches
-    seed = 1
+    #seed = 1
     rng = MersenneTwister(seed)
-    r = 2 #rank of the approximation 
+    r = 4 #rank of the approximation 
     W = buildW(r)
     n = 4 #degree of polynomials in original basis
     a, b = (-1, 1) #trait domain
-    N = 1000 #integration resolution
+    N = 100 #integration resolution
     #resolution window size
     deltax = (b-a)/(N-1)
     #write vector of points where to evaluate distribution
     evalpoints = collect(range(-1,1, N))
     #get weights of quadrature integration
     wvec = get_weights(deltax, N)
-    tspan = (1, 1e3) #integration time span
-    #A = sampleA(n) #IS THIS TRUE? 
-    A = -1.0 .* [0 0 -1 0; 
-                 0 0 0 0; 
-                 1 0 0 0; 
-                 0 0 0 0]
+    tspan = (1, 1e2) #integration time span
+    A = sampleA(n) 
+    # A = -1.0 .* [0 0 -1 0; 
+    #             0 0 0 0; 
+    #             1 0 0 0; 
+    #             0 0 0 0]
     #compute transpose(Q)*T*basis (for each x) bi's are fixed.
     T = buildT(n)
     B = computeB(A, T)
@@ -353,7 +383,19 @@
     end
     #solution1 --> solution in the latent space
     #solution2 --> solution in the discretized space
-
+    #write solutions and timepoints
+    open("solution_latent.csv", "a") do io
+        writedlm(io, solution1)
+    end
+    open("solution_disc.csv", "a") do io
+        writedlm(io, solution2)
+    end
+    open("timepoints.csv", "a") do io
+        writedlm(io, tpoints)
+    end
+    open("evalpoints.csv", "a") do io
+        writedlm(io, evalpoints)
+    end
     #compare solutions
     norm_mat = comparedynamics(solution1, solution2, [1, 2, Inf])
     #plot solutions
@@ -367,7 +409,6 @@
     savefig("../replicator_exploration/figures/integrations.pdf")
 #plot distances
 plot(1:size(norm_mat, 1), log.(norm_mat), label=["1" "2" "Inf"])
-
 #save data to plot in latex: tpoints (x-axis), evalpoints (y-axis), density (z-axis)
 #to build the file, create a matrix of three columns, and length(evalpoints) vertically 
 #separated blocks. Each block goes from 1:length(tpoints), and the y is constant, advancing
