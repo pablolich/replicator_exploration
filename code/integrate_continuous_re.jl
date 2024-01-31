@@ -409,10 +409,3 @@ plot(psol1, psol2, layout=2,
 savefig("../replicator_exploration/figures/integrations.pdf")
 #plot distances
 plot(1:size(norm_mat, 1), log.(norm_mat), label=["1" "2" "Inf"])
-#save data to plot in latex: tpoints (x-axis), evalpoints (y-axis), density (z-axis)
-#to build the file, create a matrix of three columns, and length(evalpoints) vertically 
-#separated blocks. Each block goes from 1:length(tpoints), and the y is constant, advancing
-#one unit at each block. Since there are length(evalpoints) different values, 
-#there should be length(evalpoints) different blocks. Every time t getst to length(tpoints), 
-#introduce a white line. 
-#maybe do this with R, or with the terminal?
