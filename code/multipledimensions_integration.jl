@@ -239,7 +239,7 @@ function re_discrete!(dpdt, p, pars, t)
 end
 
 function main()
-    n = 4
+    n = 2
     k = 2
     r = n^k
     N = 100 #integration resolution
@@ -286,15 +286,15 @@ function main()
     sollatent = DifferentialEquations.solve(problemlatent, progress=true, progress_steps=10)
 
 
-    par_ori = (F, wvec, N, k) #vector of parameters
-    p0 = popdist(initial_parameters, bmat)
-    #set up ODE problem and solve it
-    problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
-    println("Integrating in original space")
-    soldisc = DifferentialEquations.solve(problemdisc, progress=true, progress_steps=10)
-    return sollatent, bmat, soldisc, n, k, N
+    # par_ori = (F, wvec, N, k) #vector of parameters
+    # p0 = popdist(initial_parameters, bmat)
+    # #set up ODE problem and solve it
+    # problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
+    # println("Integrating in original space")
+    # soldisc = DifferentialEquations.solve(problemdisc, progress=true, progress_steps=10)
+    return sollatent, bmat, n, k, N, W, Blong, Q
 end
-sollatent, bmat, soldisc, n, k, N = main()
+sollatent, bmat, n, k, N, W, Blong, Q = main()
 
-disc_solution = reshape(soldisc.u[end],repeat([N], k)...)
+# disc_solution = reshape(soldisc.u[end],repeat([N], k)...)
 lat_solution = reshape(popdist(sollatent.u[end],bmat), repeat([N], k)...) 
