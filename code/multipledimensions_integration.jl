@@ -243,24 +243,24 @@ function re_discrete!(dpdt, p, pars, t)
 end
 
 function main()
-    n = 5
+    n = 3
     k = 2
     # r = n^k - 2
     threshold = 1e-10
-    N = 150 #integration resolution
-    tspan = (1, 1e1) #integration time span
+    N = 100 #integration resolution
+    tspan = (1, 15) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
     #resolution window size
     deltax = (b - a) / (N - 1)
     wvec = get_weights(deltax, N)
-    A = sampleA(n, k)
-    # A = zeros(repeat([n], 2 * k)...)
+    # A = sampleA(n, k)
+    A = zeros(repeat([n], 2 * k)...)
 
-    # A[3,1,1,1] = -1
-    # A[1,3,1,1] = -1
-    # A[1,1,3,1] = 1
-    # A[1,1,1,3] = 1
+    A[3,1,1,1] = -1
+    A[1,3,1,1] = -1
+    A[1,1,3,1] = 1
+    A[1,1,1,3] = 1
     V = get_vander(evalpoints, n)
     F = buildF(V, A, k)
     #construct F
@@ -313,7 +313,7 @@ lat_solution = reshape(popdist(sollatent.u[end],bmat), repeat([N], k)...)
 
 disc_sols = soldisc(sollatent.t)
 
-lat_sols = [popdist(sollatent(t),bmat)for t in sollatent.t]
+lat_sols = [popdist(sollatent(t),bmat) for t in sollatent.t]
 
 dmat = disc_sols-lat_sols
 
