@@ -98,9 +98,13 @@ function buildP(r)
     transpose(Matrix(Permutation(buildPvec(r))))
 end
 
-function computeQ(B, r)
+function computeQ(B, threshold)
     eigens, U = eigen(B)
     n = length(eigens)
+
+    r = sum(abs.(imag.(eigens)) .> threshold)
+    r = Integer(floor(r/2) * 2)
+
     filter = I(n)[setdiff(1:end, (r÷2+1):(n-r÷2)), :]
     indsort = sortperm(imag(eigens))
     Psort = Matrix(Permutation(indsort))
@@ -113,7 +117,7 @@ function computeQ(B, r)
     #return V
     V = Usfilt * P * (I(r ÷ 2) ⊗ M)
     Q = V * sqrt.(diagm(abs.(transpose(P) * eigensfilt)))
-    return real(Q)
+    return real(Q), r
 end
 
 function getbasispx(spandimension)
@@ -239,18 +243,24 @@ function re_discrete!(dpdt, p, pars, t)
 end
 
 function main()
-    n = 2
+    n = 5
     k = 2
-    r = n^k
-    N = 100 #integration resolution
-    tspan = (1, 1e2) #integration time span
-    initial_parameters = repeat([1.0], r)
+    # r = n^k - 2
+    threshold = 1e-10
+    N = 150 #integration resolution
+    tspan = (1, 1e1) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
     #resolution window size
     deltax = (b - a) / (N - 1)
     wvec = get_weights(deltax, N)
     A = sampleA(n, k)
+    # A = zeros(repeat([n], 2 * k)...)
+
+    # A[3,1,1,1] = -1
+    # A[1,3,1,1] = -1
+    # A[1,1,3,1] = 1
+    # A[1,1,1,3] = 1
     V = get_vander(evalpoints, n)
     F = buildF(V, A, k)
     #construct F
@@ -261,7 +271,9 @@ function main()
     Blong = reshape(B, (n^k, n^k))
 
     ##do SVD
-    Q = computeQ(Blong, r)
+    Q, r = computeQ(Blong, threshold)
+
+    initial_parameters = repeat([1.0], r)
 
     ##get basis of monomials
     monomialbasis = getbasispx(n)
@@ -286,15 +298,23 @@ function main()
     sollatent = DifferentialEquations.solve(problemlatent, progress=true, progress_steps=10)
 
 
-    # par_ori = (F, wvec, N, k) #vector of parameters
-    # p0 = popdist(initial_parameters, bmat)
-    # #set up ODE problem and solve it
-    # problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
-    # println("Integrating in original space")
-    # soldisc = DifferentialEquations.solve(problemdisc, progress=true, progress_steps=10)
-    return sollatent, bmat, n, k, N, W, Blong, Q
+    par_ori = (F, wvec, N, k) #vector of parameters
+    p0 = popdist(initial_parameters, bmat)
+    #set up ODE problem and solve it
+    problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
+    println("Integrating in original space")
+    soldisc = DifferentialEquations.solve(problemdisc, progress=true, progress_steps=10)
+    return sollatent, bmat, N, k, r, soldisc
 end
-sollatent, bmat, n, k, N, W, Blong, Q = main()
+sollatent, bmat, N, k, r, soldisc = main()
 
-# disc_solution = reshape(soldisc.u[end],repeat([N], k)...)
+disc_solution = reshape(soldisc.u[end], repeat([N], k)...)
 lat_solution = reshape(popdist(sollatent.u[end],bmat), repeat([N], k)...) 
+
+disc_sols = soldisc(sollatent.t)
+
+lat_sols = [popdist(sollatent(t),bmat)for t in sollatent.t]
+
+dmat = disc_sols-lat_sols
+
+norms = [norm(dmat[:, i]) for i in 1:size(dmat,2)]
