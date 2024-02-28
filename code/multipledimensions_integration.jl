@@ -30,10 +30,11 @@ end
 
 function quad_int(samples, weights)
     return transpose(samples)*weights
+    return transpose(samples) * weights
 end
 
 function popdist(theta, bmat)
-    return exp.(bmat*theta)
+    return exp.(bmat * theta)
 end
 
 function append0s(vectofill, finaldimension)
@@ -103,7 +104,7 @@ function computeQ(B, threshold)
     n = length(eigens)
 
     r = sum(abs.(imag.(eigens)) .> threshold)
-    r = Integer(floor(r/2) * 2)
+    r = Integer(floor(r / 2) * 2)
 
     filter = I(n)[setdiff(1:end, (r÷2+1):(n-r÷2)), :]
     indsort = sortperm(imag(eigens))
@@ -129,6 +130,7 @@ function getlegendre(T, basis)
 end
 
 function evaluatebi(G, x, basis, n, k)
+    # Evaluated at x, which is a point
     L = Array{Float64}(undef, n, k)
     for polyi in 1:n
         for coordj in 1:k
@@ -164,7 +166,7 @@ end
 
 function buildW(r::Int64)
     #build rotation matrix
-    R = [0 1;-1 0]
+    R = [0 1; -1 0]
     dim = r ÷ 2 #get dimension of W
     #initialize W
     W0 = [zeros(Int64, 2, 2) for i in 1:dim, j in 1:dim]
@@ -175,10 +177,12 @@ function buildW(r::Int64)
 end
 
 function evaluatebvec(G, basis, big_eval_points, n, r, k)
+    # Evaluate b_i's at all points x
     npoints = length(big_eval_points)
     bmat = Array{Float64}(undef, npoints, r)
+
     for i in 1:npoints
-	    bmat[i,:] = evaluatebi(G, big_eval_points[i], basis, n, k)
+        bmat[i, :] = evaluatebi(G, big_eval_points[i], basis, n, k)
     end
     return bmat # N^k x n^k
 end
@@ -193,8 +197,8 @@ function re!(dtheta, theta, p, t)
     P(theta) = quad_int(popdist(theta, bmat), weights)
     #evaluate gradient
     gradP = grad(central_fdm(5, 1), P, theta)[1] #
-    #gradP = expectedvalue(evalpoints, theta, r, coeffss, weights)
-    dtheta .= W*gradP
+    # gradP = transpose(transpose(exp.(bmat * theta)) * bmat) * P(theta)
+    dtheta .= W * gradP
     return dtheta
 end
 
@@ -225,55 +229,51 @@ function re_discrete!(dpdt, p, pars, t)
     #payoff coefficients (F), 
     #integration weights (wvec)
     F, wvec, N, k = pars
-    p = reshape(p, repeat([N], k)...)
-    #re-normalize p using quadrature rule
-    #T = quad_int(p, wvec)
-    #p = p ./ T
-    elementwisemult = p .* wvec
-    #compute differential change
-    IA = collect(1:2*k)
-    IB = collect([k + 1; 2 * k])
-    IC = collect(1:k)
-    tmp = tensorcontract(IC, F,
-        IA, elementwisemult,
-        IB)
+    # pw = reshape(p .* wvec, repeat([N], k)...)
 
-    dpdt .= vec(p .* tmp)
+    # #compute differential change
+    # IA = collect(1:2*k)
+    # IB = collect(k+1:2*k)
+    # IC = collect(1:k)
+    # Fpw = tensorcontract(IC, F,
+    #     IA, pw,
+    #     IB)
+
+    dpdt .= p .* (F * (p .* wvec))
+
     return dpdt
 end
 
 function main()
-    n = 3
-    k = 2
+    n = 4
+    k = 4
     # r = n^k - 2
-    threshold = 1e-10
-    N = 100 #integration resolution
-    tspan = (1, 15) #integration time span
+    threshold = 1e-8
+    N = 10 #integration resolution
+    tspan = (1, 10) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
     #resolution window size
     deltax = (b - a) / (N - 1)
     wvec = get_weights(deltax, N)
-    # A = sampleA(n, k)
-    A = zeros(repeat([n], 2 * k)...)
+    A = sampleA(n, k)
+    # A = zeros(repeat([n], 2 * k)...)
 
-    A[3,1,1,1] = -1
-    A[1,3,1,1] = -1
-    A[1,1,3,1] = 1
-    A[1,1,1,3] = 1
+    # A[3,1,1,1] = 0
+    # A[2,2,1,1] = 0
+    # A[1,3,1,1] = 1
+    # A = permutedims(A,(3,4,1,2)) - A 
     V = get_vander(evalpoints, n)
     F = buildF(V, A, k)
     #construct F
     T = buildT(n)
     B = computeB(A, T, k)
 
-    ##reshsape B
+    ##reshape B
     Blong = reshape(B, (n^k, n^k))
 
     ##do SVD
     Q, r = computeQ(Blong, threshold)
-
-    initial_parameters = repeat([1.0], r)
 
     ##get basis of monomials
     monomialbasis = getbasispx(n)
@@ -283,38 +283,80 @@ function main()
 
     big_wvec = deepcopy(wvec)
     big_eval_points = deepcopy(evalpoints)
-    for i=2:k
-        big_eval_points = Iterators.product(big_eval_points, evalpoints)
-        big_wvec = map(prod, Iterators.product(big_wvec, wvec) |> collect )
-    end
-    big_eval_points = big_eval_points |> collect
+
+    big_eval_points = collect(Iterators.product(ntuple(i -> evalpoints, k)...))
+    big_wvec = map(prod, collect(Iterators.product(ntuple(i -> wvec, k)...)))
+
+    # for i=2:k
+    #     big_eval_points = Iterators.product(big_eval_points, evalpoints)
+    #     big_wvec = map(prod, Iterators.product(big_wvec, wvec) |> collect )
+    # end
+    # big_eval_points = collect(Iterators.flatten(big_eval_points))
     bmat = evaluatebvec(G, legendrebasis, big_eval_points, n, r, k)
     big_wvec = vec(big_wvec)
-    
+
+    initial_parameters = repeat([1.0], r)
+    p0 = popdist(initial_parameters, bmat)
+    mass = quad_int(p0, big_wvec)
+
+    normalizing_row = Q \ I[1:n^k, 1]
+    initial_parameters -= normalizing_row * log(mass)
+
+    # p0 = popdist(initial_parameters, bmat)
+    # mass = quad_int(p0, big_wvec)
+    # print(mass)
+
     W = buildW(r)
     par_lat = (W, bmat, big_wvec)
     problemlatent = ODEProblem(re!, initial_parameters, tspan, par_lat)
     println("Integrating in latent space ")
     sollatent = DifferentialEquations.solve(problemlatent, progress=true, progress_steps=10)
 
-
-    par_ori = (F, wvec, N, k) #vector of parameters
+    # reshape F to (N^k, N^k)
+    # old_F = deepcopy(F)
+    F = reshape(permutedims(F, collect([k:-1:1; 2*k:-1:k+1])),(N^k, N^k))
+    par_ori = (F, big_wvec, N, k) #vector of parameters
     p0 = popdist(initial_parameters, bmat)
     #set up ODE problem and solve it
     problemdisc = ODEProblem(re_discrete!, p0, tspan, par_ori)
     println("Integrating in original space")
     soldisc = DifferentialEquations.solve(problemdisc, progress=true, progress_steps=10)
-    return sollatent, bmat, N, k, r, soldisc
+    return sollatent, bmat, N, k, r, soldisc, evalpoints
 end
-sollatent, bmat, N, k, r, soldisc = main()
 
-disc_solution = reshape(soldisc.u[end], repeat([N], k)...)
-lat_solution = reshape(popdist(sollatent.u[end],bmat), repeat([N], k)...) 
+sollatent, bmat, N, k, r, soldisc, evalpoints = main()
 
-disc_sols = soldisc(sollatent.t)
+# disc_solution = reshape(soldisc.u[end], repeat([N], k)...)
+# lat_solution = reshape(popdist(sollatent.u[end], bmat), repeat([N], k)...)
 
-lat_sols = [popdist(sollatent(t),bmat) for t in sollatent.t]
+times = sort(unique(cat(sollatent.t,soldisc.t, dims=1)))
 
-dmat = disc_sols-lat_sols
+end_time = minimum([sollatent.t[end],soldisc.t[end]])
+times = times[times.<=end_time]
 
-norms = [norm(dmat[:, i]) for i in 1:size(dmat,2)]
+disc_sols = soldisc(times)
+
+lat_sols = [popdist(sollatent(t), bmat) for t in times]
+
+dmat = disc_sols - lat_sols
+
+norms = [norm(dmat[:, i]) for i in 1:size(dmat, 2)]
+
+comparison = @animate for i in 1:length(sollatent.t)
+    fig = plot(layout = grid(1,2), legend=true)
+    
+    lat_plot = abs.(reshape(lat_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
+    lat_plot = log.(lat_plot)
+
+    disc_plot = abs.(reshape(disc_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
+    disc_plot = log.(disc_plot)
+
+    min_val = minimum(minimum.([lat_plot,disc_plot]))
+    max_val = maximum(maximum.([lat_plot,disc_plot]))
+    colorrange = (min_val, max_val)
+
+    heatmap!(fig[1], evalpoints, evalpoints,lat_plot, title="Latent, t=$(floor(sollatent.t[i]))", clim=colorrange)
+    heatmap!(fig[2], evalpoints, evalpoints,disc_plot, title="Discretized, t=$(floor(sollatent.t[i]))", clim=colorrange)
+end
+
+gif(comparison, "comparison.gif", fps=5)
