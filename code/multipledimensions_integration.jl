@@ -29,7 +29,6 @@ function sampleA(n, k)
 end
 
 function quad_int(samples, weights)
-    return transpose(samples)*weights
     return transpose(samples) * weights
 end
 
