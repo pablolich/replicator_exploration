@@ -195,7 +195,7 @@ function re!(dtheta, theta, p, t)
     #integrate samples of population density for quadrature weights
     P(theta) = quad_int(popdist(theta, bmat), weights)
     #evaluate gradient
-    gradP = grad(central_fdm(5, 1), P, theta)[1] #
+    gradP = grad(central_fdm(2, 1), P, theta)[1] #
     # gradP = transpose(transpose(exp.(bmat * theta)) * bmat) * P(theta)
     dtheta .= W * gradP
     return dtheta
@@ -244,12 +244,12 @@ function re_discrete!(dpdt, p, pars, t)
 end
 
 function main()
-    n = 4
-    k = 4
+    n = 2
+    k = 2
     # r = n^k - 2
     threshold = 1e-8
     N = 10 #integration resolution
-    tspan = (1, 10) #integration time span
+    tspan = (1, 1000) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
     #resolution window size
@@ -294,7 +294,7 @@ function main()
     bmat = evaluatebvec(G, legendrebasis, big_eval_points, n, r, k)
     big_wvec = vec(big_wvec)
 
-    initial_parameters = repeat([1.0], r)
+    initial_parameters = repeat([0.001], r)
     p0 = popdist(initial_parameters, bmat)
     mass = quad_int(p0, big_wvec)
 
@@ -340,6 +340,7 @@ lat_sols = [popdist(sollatent(t), bmat) for t in times]
 dmat = disc_sols - lat_sols
 
 norms = [norm(dmat[:, i]) for i in 1:size(dmat, 2)]
+plot(times,norms)
 
 comparison = @animate for i in 1:length(sollatent.t)
     fig = plot(layout = grid(1,2), legend=true)
