@@ -244,24 +244,24 @@ function re_discrete!(dpdt, p, pars, t)
 end
 
 function main()
-    n = 2
+    n = 4
     k = 2
     # r = n^k - 2
     threshold = 1e-8
-    N = 10 #integration resolution
-    tspan = (1, 1000) #integration time span
+    N = 30 #integration resolution
+    tspan = (0, 100) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
     #resolution window size
     deltax = (b - a) / (N - 1)
     wvec = get_weights(deltax, N)
     A = sampleA(n, k)
-    # A = zeros(repeat([n], 2 * k)...)
+    A = zeros(repeat([n], 2 * k)...)
 
-    # A[3,1,1,1] = 0
-    # A[2,2,1,1] = 0
-    # A[1,3,1,1] = 1
-    # A = permutedims(A,(3,4,1,2)) - A 
+    A[3,1,1,1] = 0
+    A[2,2,1,1] = 0
+    A[1,3,1,1] = 1
+    A = permutedims(A,(3,4,1,2)) - A 
     V = get_vander(evalpoints, n)
     F = buildF(V, A, k)
     #construct F
@@ -359,4 +359,4 @@ comparison = @animate for i in 1:length(sollatent.t)
     heatmap!(fig[2], evalpoints, evalpoints,disc_plot, title="Discretized, t=$(floor(sollatent.t[i]))", clim=colorrange)
 end
 
-gif(comparison, "comparison.gif", fps=5)
+gif(comparison, "comparison.gif", fps=15)
