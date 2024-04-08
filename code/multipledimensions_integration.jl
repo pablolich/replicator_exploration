@@ -11,6 +11,7 @@ using ProgressLogging
 using Plots
 using DelimitedFiles
 
+
 """
 Get weights for quadrature integration
 """
@@ -22,9 +23,17 @@ function get_weights(deltax, N)
 end
 
 function sampleA(n, k)
-    randT = rand(repeat([n], 2 * k)...)
+    randT = randn(repeat([n], 2 * k)...)
+    normalization_vec = 1 ./ (collect(1:n)) .^ (1/(2*k))
+
+    norm_mat = normalization_vec
+    for i in 2:2 * k
+        norm_mat = tensorproduct(1:i, norm_mat, 1:i-1, normalization_vec, [i])
+    end
+
     permutevec = [k+1:2*k; 1:k]
     A = 1 / 2 * (randT - permutedims(randT, permutevec))
+    A = A .* norm_mat
     return A
 end
 
@@ -95,7 +104,7 @@ function buildPvec(r)
 end
 
 function buildP(r)
-    transpose(Matrix(Permutation(buildPvec(r))))
+    return transpose(Matrix(Permutation(buildPvec(r))))
 end
 
 function computeQ(B, threshold)
@@ -112,6 +121,25 @@ function computeQ(B, threshold)
     eigenssorted = transpose(Psort) * eigens
     Usfilt = Usorted * transpose(filter)
     eigensfilt = filter * eigenssorted
+    P = buildP(r)
+    M = 1 / sqrt(2) .* [1 -1im; 1 1im]
+    #return V
+    V = Usfilt * P * (I(r ÷ 2) ⊗ M)
+    Q = V * sqrt.(diagm(abs.(transpose(P) * eigensfilt)))
+    return real(Q), r
+end
+
+function computeQ_r(B, r)
+    eigens, U = eigen(B)
+    n = length(eigens)
+
+    filt = I(n)[setdiff(1:end, (r÷2+1):(n-r÷2)), :]
+    indsort = sortperm(imag(eigens))
+    Psort = Matrix(Permutation(indsort))
+    Usorted = U * Psort
+    eigenssorted = transpose(Psort) * eigens
+    Usfilt = Usorted * transpose(filt)
+    eigensfilt = filt * eigenssorted
     P = buildP(r)
     M = 1 / sqrt(2) .* [1 -1im; 1 1im]
     #return V
@@ -256,12 +284,12 @@ function main()
     deltax = (b - a) / (N - 1)
     wvec = get_weights(deltax, N)
     A = sampleA(n, k)
-    A = zeros(repeat([n], 2 * k)...)
+    # A = zeros(repeat([n], 2 * k)...)
 
-    A[3,1,1,1] = 0
-    A[2,2,1,1] = 0
-    A[1,3,1,1] = 1
-    A = permutedims(A,(3,4,1,2)) - A 
+    # A[3,1,1,1] = 0
+    # A[2,2,1,1] = 0
+    # A[1,3,1,1] = 1
+    # A = permutedims(A,(3,4,1,2)) - A 
     V = get_vander(evalpoints, n)
     F = buildF(V, A, k)
     #construct F
@@ -294,7 +322,7 @@ function main()
     bmat = evaluatebvec(G, legendrebasis, big_eval_points, n, r, k)
     big_wvec = vec(big_wvec)
 
-    initial_parameters = repeat([0.001], r)
+    initial_parameters = repeat([0.1], r)
     p0 = popdist(initial_parameters, bmat)
     mass = quad_int(p0, big_wvec)
 
@@ -323,40 +351,42 @@ function main()
     return sollatent, bmat, N, k, r, soldisc, evalpoints
 end
 
-sollatent, bmat, N, k, r, soldisc, evalpoints = main()
+# if abspath(PROGRAM_FILE) == @__FILE__
+#     sollatent, bmat, N, k, r, soldisc, evalpoints = main()
 
-# disc_solution = reshape(soldisc.u[end], repeat([N], k)...)
-# lat_solution = reshape(popdist(sollatent.u[end], bmat), repeat([N], k)...)
+#     # disc_solution = reshape(soldisc.u[end], repeat([N], k)...)
+#     # lat_solution = reshape(popdist(sollatent.u[end], bmat), repeat([N], k)...)
 
-times = sort(unique(cat(sollatent.t,soldisc.t, dims=1)))
+#     times = sort(unique(cat(sollatent.t,soldisc.t, dims=1)))
 
-end_time = minimum([sollatent.t[end],soldisc.t[end]])
-times = times[times.<=end_time]
+#     end_time = minimum([sollatent.t[end],soldisc.t[end]])
+#     times = times[times.<=end_time]
 
-disc_sols = soldisc(times)
+#     disc_sols = soldisc(times)
 
-lat_sols = [popdist(sollatent(t), bmat) for t in times]
+#     lat_sols = [popdist(sollatent(t), bmat) for t in times]
 
-dmat = disc_sols - lat_sols
+#     dmat = disc_sols - lat_sols
 
-norms = [norm(dmat[:, i]) for i in 1:size(dmat, 2)]
-plot(times,norms)
+#     norms = [norm(dmat[:, i]) for i in 1:size(dmat, 2)]
+#     plot(times,norms)
 
-comparison = @animate for i in 1:length(sollatent.t)
-    fig = plot(layout = grid(1,2), legend=true)
-    
-    lat_plot = abs.(reshape(lat_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
-    lat_plot = log.(lat_plot)
+#     comparison = @animate for i in 1:length(sollatent.t)
+#         fig = plot(layout = grid(1,2), legend=true)
+        
+#         lat_plot = abs.(reshape(lat_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
+#         lat_plot = log.(lat_plot)
 
-    disc_plot = abs.(reshape(disc_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
-    disc_plot = log.(disc_plot)
+#         disc_plot = abs.(reshape(disc_sols[i], repeat([N], k)...))[repeat([1], k-2)..., :, :]
+#         disc_plot = log.(disc_plot)
 
-    min_val = minimum(minimum.([lat_plot,disc_plot]))
-    max_val = maximum(maximum.([lat_plot,disc_plot]))
-    colorrange = (min_val, max_val)
+#         min_val = minimum(minimum.([lat_plot,disc_plot]))
+#         max_val = maximum(maximum.([lat_plot,disc_plot]))
+#         colorrange = (min_val, max_val)
 
-    heatmap!(fig[1], evalpoints, evalpoints,lat_plot, title="Latent, t=$(floor(sollatent.t[i]))", clim=colorrange)
-    heatmap!(fig[2], evalpoints, evalpoints,disc_plot, title="Discretized, t=$(floor(sollatent.t[i]))", clim=colorrange)
-end
+#         heatmap!(fig[1], evalpoints, evalpoints,lat_plot, title="Latent, t=$(floor(sollatent.t[i]))", clim=colorrange)
+#         heatmap!(fig[2], evalpoints, evalpoints,disc_plot, title="Discretized, t=$(floor(sollatent.t[i]))", clim=colorrange)
+#     end
 
-gif(comparison, "comparison.gif", fps=15)
+#     gif(comparison, "comparison.gif", fps=5)
+# end
