@@ -273,10 +273,10 @@ end
 
 function main()
     n = 4
-    k = 2
+    k = 1
     # r = n^k - 2
     threshold = 1e-8
-    N = 30 #integration resolution
+    N = 100 #integration resolution
     tspan = (0, 100) #integration time span
     evalpoints = collect(range(-1, 1, N))
     a, b = (-1, 1) #trait domain
@@ -322,15 +322,15 @@ function main()
     bmat = evaluatebvec(G, legendrebasis, big_eval_points, n, r, k)
     big_wvec = vec(big_wvec)
 
-    initial_parameters = repeat([0.1], r)
+    initial_parameters = repeat([0], r)
     p0 = popdist(initial_parameters, bmat)
     mass = quad_int(p0, big_wvec)
 
     normalizing_row = Q \ I[1:n^k, 1]
     initial_parameters -= normalizing_row * log(mass)
 
-    # p0 = popdist(initial_parameters, bmat)
-    # mass = quad_int(p0, big_wvec)
+    p0 = popdist(initial_parameters, bmat)
+    mass = quad_int(p0, big_wvec)
     # print(mass)
 
     W = buildW(r)

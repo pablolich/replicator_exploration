@@ -83,19 +83,23 @@ def computeQ(B_mat, n, k, r):
     imag_vals = jnp.imag(vals)
 
     indsort = jnp.argsort(imag_vals)
+
     vals = vals[indsort]
     imag_vals = imag_vals[indsort]
-
     vecs = vecs[:, indsort]
 
     vals = jnp.concatenate([vals[: r // 2], vals[: n**k - r // 2 - 1 : -1]])
     vecs = jnp.concatenate([vecs[:, : r // 2], vecs[:, : n**k - r // 2 - 1 : -1]], 1)
 
-    vals = vals[::-1]
-    vecs = vecs[:, ::-1]
+    # vals = vals[::-1]
+    # vecs = vecs[:, ::-1]
 
-    vals = rearrange(vals, "(two n) -> (n two)", two=2)
-    vecs = rearrange(vecs, "i (two n) -> i (n two)", two=2)
+    vals = rearrange(vals, "(two n) -> n two", two=2)
+    vals = vals[:, ::-1]
+    vals = rearrange(vals, "n two -> (n two)")
+    vecs = rearrange(vecs, "i (two n) -> i n two", two=2)
+    vecs = vecs[:, :, ::-1]
+    vecs = rearrange(vecs, "i n two -> i (n two)")
 
     M = 1 / jnp.sqrt(2) * jnp.array([[1, -1j], [1, 1j]])
 

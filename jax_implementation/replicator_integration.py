@@ -7,6 +7,7 @@ import diffrax
 import sys
 import os
 from einops import rearrange, einsum
+import optax as optx
 import time
 import matplotlib.pyplot as plt
 
@@ -22,17 +23,18 @@ if __name__ == "__main__":
     key = random.key(0)
     n = 4
     k = 3
-    r = n**k // 2 * 2
+    r = n**k / 2
     dt0 = 0.1
-    threshold = 1e-8
-    N = 30  # integration resolution
-    tspan = (0, 10)  # integration time span
-    num_times = 30
+    # threshold = 1e-1
+    N = 20  # integration resolution
+    tspan = (0, 30)  # integration time span
+    num_times = 100
     times = jnp.linspace(tspan[0], tspan[1], num=num_times).tolist()
     a, b = (-1, 1)  # trait domain
     evalpoints = jnp.linspace(a, b, num=N)
     # resolution window size
     deltax = (b - a) / (N - 1)
+    r = r // 2 * 2
 
     solver = diffrax.Tsit5()
     saveat = diffrax.SaveAt(ts=times)
@@ -59,11 +61,11 @@ if __name__ == "__main__":
 
     b_vec = evaluateBVec(Q, evalpoints, n, r, k)
 
-    initial_parameters = jnp.array(r * [1])
+    initial_parameters = jnp.array(r * [0])
     p0 = jnp.exp(b_vec @ initial_parameters)
     mass = jnp.dot(p0, wvec)
 
-    normalizing_row = jnp.linalg.lstsq(Q, jnp.eye(n**k)[:, 0])[0]
+    normalizing_row = jnp.real(jnp.linalg.lstsq(Q, jnp.eye(n**k)[:, 0])[0])
     initial_parameters -= normalizing_row * jnp.log(mass)
 
     W = jnp.kron(jnp.eye(r // 2), jnp.array([[0, 1], [-1, 0]]))
@@ -74,9 +76,11 @@ if __name__ == "__main__":
     def latent_equation(t, theta, *args):
         return W @ gradP(theta)
 
+    Fw = F * wvec[None, :]
+
     @jax.jit
     def discrete_equation(t, p, *args):
-        return p * (F @ (p * wvec))
+        return (Fw @ p) * p
 
     latent_term = diffrax.ODETerm(latent_equation)
     discrete_term = diffrax.ODETerm(discrete_equation)
@@ -94,7 +98,7 @@ if __name__ == "__main__":
     )
     print(time.time() - t)
 
-    latent_sol_populations = jax.vmap(lambda theta: b_vec @ theta)(
+    latent_sol_populations = jax.vmap(lambda theta: jnp.exp(b_vec @ theta))(
         latent_sol.ys
     )
 
@@ -110,3 +114,7 @@ if __name__ == "__main__":
         stepsize_controller=stepsize_controller,
     )
     print(time.time() - t)
+
+    norms = jax.vmap(jnp.linalg.norm)(latent_sol_populations-discrete_sol.ys)
+    plt.plot(times,norms)
+    plt.show()

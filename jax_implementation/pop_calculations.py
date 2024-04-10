@@ -21,7 +21,7 @@ jax.config.update("jax_platform_name", "cpu")
 def evaluateBVec(Q, evalpoints, n, r, k):
     eval_poly = jnp.vander(evalpoints, n, increasing=True)
 
-    M = computeT(n) @ eval_poly.transpose()
+    M = computeT(n).transpose() @ eval_poly.transpose()
 
     Q_mat_string = "(" + "".join("k" + str(l) + " " for l in range(k))[:-1] + ") j"
     Q_tensor_string = "".join("k" + str(l) + " " for l in range(k))[:-1] + " j"
